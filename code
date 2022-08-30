@@ -1,0 +1,899 @@
+package com.AmoTech.databoyv2;
+
+import androidx.annotation.NonNull;
+import androidx.appcompat.app.AppCompatActivity;
+import androidx.recyclerview.widget.LinearLayoutManager;
+import androidx.recyclerview.widget.RecyclerView;
+
+import android.app.Activity;
+import android.content.Context;
+import android.content.Intent;
+import android.os.Bundle;
+import android.util.Log;
+import android.view.View;
+import android.view.WindowManager;
+import android.view.animation.AlphaAnimation;
+import android.view.animation.Animation;
+import android.widget.Button;
+import android.widget.EditText;
+import android.widget.FrameLayout;
+import android.widget.ImageView;
+import android.widget.ProgressBar;
+import android.widget.TextView;
+import android.widget.Toast;
+
+import com.AmoTech.databoyv2.Adapter.DataPageAdapter;
+import com.AmoTech.databoyv2.Adapter.PostAdapter;
+import com.AmoTech.databoyv2.Model.DataPages;
+import com.flutterwave.raveandroid.RavePayActivity;
+import com.flutterwave.raveandroid.RaveUiManager;
+import com.flutterwave.raveandroid.rave_java_commons.RaveConstants;
+import com.google.android.gms.ads.AdRequest;
+import com.google.android.gms.ads.LoadAdError;
+import com.google.android.gms.ads.OnUserEarnedRewardListener;
+import com.google.android.gms.ads.interstitial.InterstitialAd;
+import com.google.android.gms.ads.rewarded.RewardItem;
+import com.google.android.gms.ads.rewarded.RewardedAd;
+import com.google.android.gms.ads.rewarded.RewardedAdLoadCallback;
+import com.google.android.gms.tasks.OnCompleteListener;
+import com.google.android.gms.tasks.Task;
+import com.google.android.material.floatingactionbutton.FloatingActionButton;
+import com.google.firebase.auth.FirebaseAuth;
+import com.google.firebase.firestore.DocumentSnapshot;
+import com.google.firebase.firestore.FieldValue;
+import com.google.firebase.firestore.FirebaseFirestore;
+import com.google.firebase.firestore.ListenerRegistration;
+import com.google.firebase.firestore.Query;
+
+import java.text.SimpleDateFormat;
+import java.util.ArrayList;
+import java.util.Date;
+import java.util.HashMap;
+import java.util.List;
+import java.util.Locale;
+import java.util.Map;
+import java.util.Random;
+
+public class DisplayDataActivity extends AppCompatActivity {
+    FirebaseAuth firebaseAuth;
+    private RecyclerView mRecyclerView;
+    private FirebaseFirestore firestore;
+    private Query query;
+    String postId;
+    private String post_id;
+   // private int unlocksAvailable;
+    private ListenerRegistration listenerRegistration;
+    List<String> dataPagesUrls;
+    List<DataPages> dataPages;
+   public List<String> tempList=PostAdapter.recievedListOfDataUrls;
+    DataPageAdapter adapter;
+    String tempPostId;
+    private Boolean thisDocumentIsAlreadyUnlocked;
+    private TextView unlockDataTv,dataHasNowBeenUnlockedTv,uploadTextView;
+    private Button moreUnlockDataBtn,clickHereToSignIn,unlockThisDocument;
+   // boolean theListHasBeenAsigned;
+    private String guestUid, paymentEmail; //using precious email for guest uid
+    private Button useOneUnlockToOpen, watchAddToGetAccessBtn,buyUnlocksBtn,makePayMentBtn;
+private FloatingActionButton activityDisplayDataFab,refreshDataBtn;
+ProgressBar displayDataPd;
+FrameLayout paymentInfoFrameLayout;
+private EditText enterEmailForPaymentEt;
+private String customerUserId;
+private ImageView noInternetIv;
+FrameLayout noInternetFl;
+
+    private RewardedAd mRewardedAd;
+    private final String TAG = "MainActivity";
+
+    //this is now for the video interstitial that will load when the rewarded add is not ready
+    private InterstitialAd interstitialAd;
+    private boolean adIsLoading;
+    private static final String AD_UNIT_ID = /*add key*/;
+   // private static final String TAG = "MyActivity";
+
+
+    @Override
+    protected void onCreate(Bundle savedInstanceState) {
+        super.onCreate(savedInstanceState);
+        //this is supposed to stop screenshots
+        getWindow().setFlags(WindowManager.LayoutParams.FLAG_SECURE, WindowManager.LayoutParams.FLAG_SECURE);
+        setContentView(R.layout.activity_display_data);
+        //Log.i("info datadisplayActi", tempList.get(0));
+        firebaseAuth = FirebaseAuth.getInstance();
+        firestore = FirebaseFirestore.getInstance();
+        dataPages = new ArrayList<>();
+        adapter = new DataPageAdapter(DisplayDataActivity.this, dataPages);
+        mRecyclerView = findViewById(R.id.dataPagesRv);
+        mRecyclerView.setHasFixedSize(true);
+        mRecyclerView.setLayoutManager(new LinearLayoutManager(DisplayDataActivity.this));
+        mRecyclerView.setAdapter(adapter);
+        String currentUserId= firebaseAuth.getCurrentUser().getUid();
+        post_id = getIntent().getStringExtra("itsPostid");
+        moreUnlockDataBtn=findViewById(R.id.moreUnlockDataInfoBtn);
+        unlockDataTv= findViewById(R.id.unlockDataTv);
+        //dataHasNowBeenUnlockedTv= findViewById(R.id.dataHasBeenUnlockedTv);
+        guestUid= "Tr16CSVUKMTiWir7fgdEUc2pkqv2";//used presiousbanda90@gmail.com and pw 123456789
+        clickHereToSignIn=findViewById(R.id.clickHereToSignIn);
+        unlockThisDocument=findViewById(R.id.unlockThisDocumentBtn);
+        useOneUnlockToOpen= findViewById(R.id.useOneUnlockToOpen);
+        watchAddToGetAccessBtn=findViewById(R.id.watchAddToGetAccessBtn);
+        activityDisplayDataFab=findViewById(R.id.activityDisplayDataFab);
+        displayDataPd=findViewById(R.id.dislayDataPd);
+        buyUnlocksBtn=findViewById(R.id.buyUnlocksBtn);
+        makePayMentBtn=findViewById(R.id.makePaymentBtn);
+       // standAloneBuyUnlocksBtn= findViewById(R.id.standAloneBuyUnlocksBtn);
+        paymentInfoFrameLayout=findViewById(R.id.frameLayOutForPaymentEmail);
+        enterEmailForPaymentEt=findViewById(R.id.enterEmailForPaymentEt);
+        customerUserId= firebaseAuth.getCurrentUser().getUid();
+        uploadTextView=findViewById(R.id.uploadTextView);
+        noInternetIv=findViewById(R.id.noInternetIv);
+        noInternetFl=findViewById(R.id.noInternetFl);
+        refreshDataBtn=findViewById(R.id.refreshBtn);
+
+
+        getSupportActionBar().hide();
+// this is for the rewarded add
+        loadTheRewardedAdd();
+        /*
+        AdRequest adRequest = new AdRequest.Builder().build();
+
+        RewardedAd.load(this, "ca-app-pub-3940256099942544/5224354917",
+                adRequest, new RewardedAdLoadCallback() {
+                    @Override
+                    public void onAdFailedToLoad(@NonNull LoadAdError loadAdError) {
+                        // Handle the error.
+                        Log.d(TAG, loadAdError.getMessage());
+                        mRewardedAd = null;
+                    }
+
+                    @Override
+                    public void onAdLoaded(@NonNull RewardedAd rewardedAd) {
+                        mRewardedAd = rewardedAd;
+                        Log.d(TAG, "Ad was loaded.");
+                    }
+                });
+
+         */
+
+
+        Log.i("info", "the setting up the scroll listener bruh");
+// i might need this code for making a recycler view later
+        //if (firebaseAuth.getCurrentUser() != null) {
+
+        mRecyclerView.addOnScrollListener(new RecyclerView.OnScrollListener() {
+            @Override
+            public void onScrolled(@NonNull RecyclerView recyclerView, int dx, int dy) {
+                super.onScrolled(recyclerView, dx, dy);
+                Boolean isBottom = !mRecyclerView.canScrollVertically(1);
+                if (isBottom)
+                    Toast.makeText(DisplayDataActivity.this, "Reached Bottom", Toast.LENGTH_SHORT).show();
+            }
+        });
+        Log.i("info","finished setting up scroll listener and displaying dialogue bar the checking unlocked data");
+displayDataPd.setVisibility(View.VISIBLE);
+        firestore.collection("Users/"+currentUserId+"/unlockedDocuments").document(post_id).get().addOnCompleteListener(new OnCompleteListener<DocumentSnapshot>() {
+            @Override
+            public void onComplete(@NonNull Task<DocumentSnapshot> task) {
+                if (task.isSuccessful()) {
+                    Log.i("info","checking unlocked data successful and will fetch result");
+                    DocumentSnapshot document = task.getResult();
+                    if (document.exists()) {
+                        Log.d(TAG, "Document existss!, loading full data");
+                        //load full data here
+                        //firestore.collection("Users")
+                        //loadFullData();
+                        loadHalfOfUnlockedData();
+
+                    } else {
+
+                        Log.d(TAG, "Document does not exisst!, loading half dataa");
+                        loadHalfData();
+                    }
+                } else {
+                    Log.d(TAG, "Failed wiith: ", task.getException());
+                    Toast.makeText(DisplayDataActivity.this, task.getException().getMessage(), Toast.LENGTH_SHORT).show();
+                    noInternetFl.setVisibility(View.VISIBLE);
+                    Toast.makeText(DisplayDataActivity.this, "Try to reload or restart the page ", Toast.LENGTH_LONG).show();
+
+                }
+            }
+        });
+        displayDataPd.setVisibility(View.GONE);
+/*
+
+        firestore.collection("Users/").document(currentUserId).get().addOnCompleteListener(new OnCompleteListener<DocumentSnapshot>() {
+            @Override
+            public void onComplete(@NonNull Task<DocumentSnapshot> task) {
+                if (task.isSuccessful()) {
+                    DocumentSnapshot document = task.getResult();
+                    if (document != null) {
+                        unlocksAvailable = document.getDouble("unlocksAvailable").intValue();
+                    } else {
+                        Log.d("LOGGER", "No such document");
+                        Toast.makeText(DisplayDataActivity.this,"it seems u don't have any unlocks",Toast.LENGTH_LONG).show();
+                    }
+                } else {
+                    Log.d("LOGGER", "get unlocks failed with ", task.getException());
+                }
+            }
+        });
+*/
+
+
+moreUnlockDataBtn.setOnClickListener(new View.OnClickListener() {
+    @Override
+    public void onClick(View v) {
+       // startActivity(new Intent(DisplayDataActivity.this , UploadActivity.class));
+//Toast.makeText(DisplayDataActivity.this,"coming soon",Toast.LENGTH_LONG).show();
+startActivity(new Intent(DisplayDataActivity.this,aboutDataBoy.class));
+
+    }
+});
+
+unlockThisDocument.setOnClickListener(new View.OnClickListener() {
+    @Override
+    public void onClick(View v) {
+        if (firebaseAuth.getCurrentUser().getUid().equals(guestUid)){
+            Toast.makeText(DisplayDataActivity.this,"Please sign into a personal account to use this, not a guest account",Toast.LENGTH_LONG).show();
+            clickHereToSignIn.setVisibility(View.VISIBLE);
+
+        /*
+        if (unlocksAvailable>0) {
+            Toast.makeText(DisplayDataActivity.this, "coming soon!", Toast.LENGTH_SHORT).show();
+
+            Map<String, Object> unlockedDataMap = new HashMap<>();
+            unlockedDataMap.put("time", FieldValue.serverTimestamp());
+            unlockedDataMap.put("user", currentUserId);
+            firestore.collection("Users/" + currentUserId + "unlockedDocuments").document(post_id).set(unlockedDataMap).addOnCompleteListener(new OnCompleteListener<Void>() {
+                @Override
+                public void onComplete(@NonNull Task<Void> task) {
+                    if (task.isSuccessful()) {
+
+                        // Toast.makeText(context, "the unlocks successfully incremented by 1", Toast.LENGTH_LONG).show();
+
+
+                        firestore.collection("Users/+").document(currentUserId).update("unlocksAvailable", FieldValue.increment(-1)).addOnCompleteListener(new OnCompleteListener<Void>() {
+                            @Override
+                            public void onComplete(@NonNull Task<Void> task) {
+                                if (task.isSuccessful()) {
+                                    Log.i("info", "available unlocks reduced by 1");
+                                } else {
+                                    Log.i("info", "was unable to decrement the feildvalue of available Unlocks ");
+                                }
+
+                            }
+                        });
+
+                    } else {
+                        //  Toast.makeText(context, "unlocks Available updated but document not recorded as unlocked", Toast.LENGTH_LONG).show();
+                        Log.i("info", "unlocks Available updated but document not recorded as unlocked");
+                    }
+
+                }
+            });
+        }else{
+            Toast.makeText(DisplayDataActivity.this, "unfortunatly you have 0 unlocks available, Click the green Button",Toast.LENGTH_LONG).show();
+        }
+        */
+    }else{
+
+
+            Log.i("info", "chicking the users available unlocks ");
+            displayDataPd.setVisibility(View.VISIBLE);
+            firestore.collection("Users/").document(currentUserId).get().addOnCompleteListener(new OnCompleteListener<DocumentSnapshot>() {
+                @Override
+                public void onComplete(@NonNull Task<DocumentSnapshot> task) {
+                    if (task.isSuccessful()) {
+                        DocumentSnapshot document = task.getResult();
+                        Log.i("info", "checking if availabe unlocks document is nill");
+                        if (document != null) {
+                            Log.i("info", "the document is not nill n assigning available unlocks to local varial");
+                            Long unlocksAvailable = (Long) document.get("unlocksAvailable");
+                            Log.i("info", "checking if availabe unlocks is greater than 0");
+
+                            if (unlocksAvailable > 0) {
+                                Log.i("info", "available unlocks is greater than 0");
+                                Map<String, Object> unlockedDataMap = new HashMap<>();
+                                unlockedDataMap.put("time", FieldValue.serverTimestamp());
+                                unlockedDataMap.put("user", currentUserId);
+                                firestore.collection("Users/" + currentUserId + "/unlockedDocuments").document(post_id)
+                                        .set(unlockedDataMap).addOnCompleteListener(new OnCompleteListener<Void>() {
+                                    @Override
+                                    public void onComplete(@NonNull Task<Void> task) {
+                                        if (task.isSuccessful()) {
+                                            Log.i("info", "the document has been recorded as unlocked");
+
+
+                                            // Toast.makeText(context, "the unlocks successfully incremented by 1", Toast.LENGTH_LONG).show();
+
+                                            Log.i("info", "will now try to decreament available unlocks ");
+                                            firestore.collection("Users").document(currentUserId)
+                                                    .update("unlocksAvailable", FieldValue.increment(-3)).addOnCompleteListener(new OnCompleteListener<Void>() {
+                                                @Override
+                                                public void onComplete(@NonNull Task<Void> task) {
+                                                    if (task.isSuccessful()) {
+                                                        Log.i("info", "available unlocks reduced by 3");
+                                                        Toast.makeText(DisplayDataActivity.this, "available unlocks reduced by 3", Toast.LENGTH_SHORT).show();
+                                                        loadFullData();
+                                                       // dataHasNowBeenUnlockedTv.setVisibility(View.VISIBLE);
+                                                        moreUnlockDataBtn.setVisibility(View.GONE);
+                                                       // dataHasNowBeenUnlockedTv.setBackgroundColor(Color.parseColor("#44873b"));
+                                                        unlockDataTv.setVisibility(View.GONE);
+                                                        unlockThisDocument.setVisibility(View.GONE);
+                                                        displayDataPd.setVisibility(View.GONE);
+
+                                                    } else {
+                                                        Log.i("info", "was unable to decrement the feildvalue of available Unlocks ");
+                                                        displayDataPd.setVisibility(View.GONE);
+
+                                                    }
+
+                                                }
+                                            });
+
+                                        } else {
+                                            //  Toast.makeText(context, "unlocks Available updated but document not recorded as unlocked", Toast.LENGTH_LONG).show();
+                                            Log.i("info", "unlocks Available updated but document not recorded as unlocked");
+                                            Toast.makeText(DisplayDataActivity.this, "unable to decrement unlocks", Toast.LENGTH_LONG).show();
+                                        }
+
+                                    }
+                                });
+                            } else {
+                                displayDataPd.setVisibility(View.GONE);
+                                Log.i("info", "the number of unlocks is not greater than 0");
+                                Toast.makeText(DisplayDataActivity.this, "unfortunatly you have 0 unlocks available, Click the + button to earn unlocks or the more info button", Toast.LENGTH_LONG).show();
+                                activityDisplayDataFab.setVisibility(View.VISIBLE);
+                              //  buyUnlocksBtn.setVisibility(View.VISIBLE);//temporally disabled until i get a few more customers
+                            }
+
+                        } else {
+                            displayDataPd.setVisibility(View.GONE);
+                            Log.d("LOGGER", "No such document, no available unlocks field");
+                            Toast.makeText(DisplayDataActivity.this, "it seems u don't have any unlocks", Toast.LENGTH_LONG).show();
+                        }
+                    } else {
+                        displayDataPd.setVisibility(View.GONE);
+                        Log.d("LOGGER", "get unlocks failed with ", task.getException());
+                    }
+                }
+            });
+
+        }
+}
+});
+
+useOneUnlockToOpen.setOnClickListener(new View.OnClickListener() {
+    @Override
+
+    public void onClick(View view) {
+
+        if(currentUserId.equals(guestUid))
+        {Toast.makeText(DisplayDataActivity.this,"please sign into a personal account first ",Toast.LENGTH_LONG).show();
+        clickHereToSignIn.setVisibility(View.VISIBLE);
+            return;
+        }
+
+       // loadFullData();
+        Log.i("info", "chicking the users available unlocks ");
+        firestore.collection("Users/").document(currentUserId)
+                .get().addOnCompleteListener(new OnCompleteListener<DocumentSnapshot>() {
+            @Override
+            public void onComplete(@NonNull Task<DocumentSnapshot> task) {
+                if (task.isSuccessful()) {
+                    DocumentSnapshot document = task.getResult();
+                    Log.i("info", "checking if availabe unlocks document is nill");
+                    if (document != null) {
+                        Log.i("info", "the document is not nill n assigning available unlocks to local varial");
+                        Long unlocksAvailable = (Long) document.get("unlocksAvailable");
+                        Log.i("info", "checking if availabe unlocks is greater than 0");
+
+                        if (unlocksAvailable > 0) {
+                            Log.i("info", "available unlocks is greater than 0");
+
+                                        Log.i("info", "will now try to decrement available unlocks ");
+                                        firestore.collection("Users").document(currentUserId).update("unlocksAvailable", FieldValue.increment(-1))
+                                                .addOnCompleteListener(new OnCompleteListener<Void>() {
+                                            @Override
+                                            public void onComplete(@NonNull Task<Void> task) {
+                                                if (task.isSuccessful()) {
+                                                    Log.i("info", "available unlocks reduced by 1");
+                                                    Toast.makeText(DisplayDataActivity.this, "available unlocks reduced by 1", Toast.LENGTH_SHORT).show();
+                                                    loadFullData();
+                                                    // dataHasNowBeenUnlockedTv.setVisibility(View.VISIBLE);
+
+                                                } else {
+                                                    Log.i("info", "was unable to decrement the feildvalue of available Unlocks ");
+                                                    Toast.makeText(DisplayDataActivity.this, " im unable to access the unlocks",Toast.LENGTH_LONG).show();
+                                                }
+                                            }
+                                        });
+                        } else {
+                            activityDisplayDataFab.setVisibility(View.VISIBLE);
+                            Log.i("info", "the number of unlocks is not greater than 0");
+                            Toast.makeText(DisplayDataActivity.this, "unfortunatly U have 0 unlocks, u could upload a test or answer sheet of your own or watch a video add ", Toast.LENGTH_LONG).show();
+                            watchAddToGetAccessBtn.setVisibility(View.VISIBLE);
+                         //   buyUnlocksBtn.setVisibility(View.VISIBLE);//temporally disabled until i get a few more users
+                        }
+                    } else {
+                        Log.d("LOGGER", "No such document, no available unlocks field, contact the developer in about data boy page ");
+                        Toast.makeText(DisplayDataActivity.this, "it seems u don't have any unlocks,  contact the developer in about data boy page", Toast.LENGTH_LONG).show();
+                    }
+                } else {
+                    Log.d("LOGGER", "get unlocks failed with ", task.getException());
+                    Toast.makeText(DisplayDataActivity.this, "failed to check available unlocks", Toast.LENGTH_SHORT).show();
+                }
+            }
+        });
+
+    }
+});
+
+        clickHereToSignIn.setOnClickListener(new View.OnClickListener() {
+            @Override
+            public void onClick(View v) {
+                startActivity(new Intent(DisplayDataActivity.this,signInActivity.class));
+            }
+        });
+        watchAddToGetAccessBtn.setOnClickListener(new View.OnClickListener() {
+            @Override
+            public void onClick(View view) {
+               Toast.makeText(DisplayDataActivity.this,"i will try to load the add ", Toast.LENGTH_LONG).show();
+               showTheAdd();
+            }
+        });
+
+        activityDisplayDataFab.setOnClickListener(new View.OnClickListener() {
+            @Override
+            public void onClick(View view) {
+                Log.i("info","u clicked fab");
+                startActivity(new Intent(DisplayDataActivity.this, UploadActivity.class));
+            }
+        });
+
+        buyUnlocksBtn.setOnClickListener(new View.OnClickListener() {
+            @Override
+            public void onClick(View view) {
+                paymentInfoFrameLayout.setVisibility(View.VISIBLE);
+                buyUnlocksBtn.setBackgroundColor(getResources().getColor(R.color.dark_gray));
+
+                AlphaAnimation alphaAnimation = new AlphaAnimation(0.0f, 1.0f);
+                alphaAnimation.setDuration(1000);
+                alphaAnimation.setRepeatCount(2);
+                alphaAnimation.setRepeatMode(Animation.REVERSE);
+                //view.findViewById(R.id.frameLayOutForPaymentEmail).startAnimation(alphaAnimation);
+                paymentInfoFrameLayout.startAnimation(alphaAnimation);
+
+                alphaAnimation.setAnimationListener(new Animation.AnimationListener() {
+                    @Override
+                    public void onAnimationStart(Animation animation) {
+                        //TODO: Run when animation start
+                    }
+
+                    @Override
+                    public void onAnimationEnd(Animation animation) {
+                        //TODO: Run when animation end
+                    }
+
+                    @Override
+                    public void onAnimationRepeat(Animation animation) {
+                        //TODO: Run when animation repeat
+                    }
+                });
+               // revUiManager();
+            }
+        });
+
+        makePayMentBtn.setOnClickListener(new View.OnClickListener() {
+            @Override
+            public void onClick(View view) {
+                //TODO: add a method to validate email address ( make sure its an email format) not just checking if empty
+                paymentEmail = enterEmailForPaymentEt.getText().toString();
+                if (paymentEmail.isEmpty()){
+                    Toast.makeText(DisplayDataActivity.this,"enter a valid email",Toast.LENGTH_LONG);
+                }else{
+                revUiManager();
+            }
+            }
+        });
+        refreshDataBtn.setOnClickListener(new View.OnClickListener() {
+            @Override
+            public void onClick(View view) {
+                Context activity=DisplayDataActivity.this;
+                DisplayDataActivity.this.recreate();
+            }
+        });
+    }
+
+    private void loadFullData(){
+        String myPostId = post_id;
+        activityDisplayDataFab.setVisibility(View.GONE);
+        useOneUnlockToOpen.setVisibility(View.GONE);
+        buyUnlocksBtn.setVisibility(View.GONE);
+        watchAddToGetAccessBtn.setVisibility(View.GONE);
+        uploadTextView.setVisibility(View.GONE);
+
+        firestore.collection("Posts/" + myPostId + "/images")
+                .document("uploadedImages").get()
+                .addOnCompleteListener(new OnCompleteListener<DocumentSnapshot>() {
+                    @Override
+                    public void onComplete(@NonNull Task<DocumentSnapshot> task) {
+                        DocumentSnapshot document = task.getResult();
+                        List<String> listOfURLs = (List<String>) document.get("images");
+
+                        int count;
+                        count=0;
+                        dataPages.clear();
+                        adapter.notifyDataSetChanged();
+                        for(String testingString:listOfURLs){
+                            testingString=listOfURLs.get(count);
+                            Log.i("info DataAct postId",post_id);
+                            Log.i("info new Urls",testingString);
+                            DataPages dataPage = new DataPages(testingString);
+                            dataPages.add(dataPage);
+                            //adapter.notifyDataSetChanged();
+                            count= count+1;
+                        }
+                        adapter.notifyDataSetChanged();
+                    }
+                });
+    }
+
+    private void loadHalfData(){
+        activityDisplayDataFab.setVisibility(View.VISIBLE);
+        unlockDataTv.setVisibility(View.VISIBLE);
+        moreUnlockDataBtn.setVisibility(View.VISIBLE);
+        unlockThisDocument.setVisibility(View.VISIBLE);
+        //Todo: will temporallyi remove the buy unlocks option, until i get a few more users
+       // buyUnlocksBtn.setVisibility(View.VISIBLE);
+
+       // useOneUnlockToOpen.setVisibility(View.VISIBLE);
+        paymentInfoFrameLayout.setVisibility(View.GONE);
+        watchAddToGetAccessBtn.setVisibility(View.GONE);
+            String myPostId = post_id;
+            firestore.collection("Posts/" + myPostId + "/images")
+                    .document("uploadedImages").get()
+                    .addOnCompleteListener(new OnCompleteListener<DocumentSnapshot>() {
+                        @Override
+                        public void onComplete(@NonNull Task<DocumentSnapshot> task) {
+                            DocumentSnapshot document = task.getResult();
+                            List<String> listOfURLs = (List<String>) document.get("images");
+
+                            int count;
+                            count=0;
+                            if(listOfURLs.size()==1){
+                                loadFullData();
+                                Toast.makeText(DisplayDataActivity.this,"mmmmm it seems this is a one page document",Toast.LENGTH_LONG).show();
+
+                            }else {
+                                for (int i = 0; i < listOfURLs.size() / 2; i++) {
+                                    String testingString;
+                                    testingString = listOfURLs.get(count);
+                                    Log.i(" info DataAct postId ", post_id);
+                                    Log.i("info new Urls", testingString);
+                                    DataPages dataPage = new DataPages(testingString);
+                                    dataPages.add(dataPage);
+                                    //adapter.notifyDataSetChanged();
+                                    count = count + 1;
+                                }
+                            }
+                            /*
+                            for(String testingString:listOfURLs){
+                                testingString=listOfURLs.get(count);
+                                Log.i("info DataAct postId",post_id);
+                                Log.i("info new Urls",testingString);
+                                DataPages dataPage = new DataPages(testingString);
+                                dataPages.add(dataPage);
+                                //adapter.notifyDataSetChanged();
+                                count= count+1;
+                            }*/
+                            adapter.notifyDataSetChanged();
+                        }
+                    });
+    }
+
+    private void loadHalfOfUnlockedData(){
+       useOneUnlockToOpen.setVisibility(View.VISIBLE);
+        watchAddToGetAccessBtn.setVisibility(View.VISIBLE);
+
+      // activityDisplayDataFab.setVisibility(View.VISIBLE);
+        String myPostId = post_id;
+        firestore.collection("Posts/" + myPostId + "/images")
+                .document("uploadedImages").get()
+                .addOnCompleteListener(new OnCompleteListener<DocumentSnapshot>() {
+                    @Override
+                    public void onComplete(@NonNull Task<DocumentSnapshot> task) {
+                        DocumentSnapshot document = task.getResult();
+                        List<String> listOfURLs = (List<String>) document.get("images");
+
+                        int count;
+                        count=0;
+                        if(listOfURLs.size()==1){
+                            loadFullData();
+                            Toast.makeText(DisplayDataActivity.this,"mmmmm it seems this is a one page document",Toast.LENGTH_LONG).show();
+                        }else {
+                            for (int i = 0; i < listOfURLs.size() / 2; i++) {
+                                String testingString;
+                                testingString = listOfURLs.get(count);
+                                Log.i("info DataAct postId", post_id);
+                                Log.i("info new Urls", testingString);
+                                DataPages dataPage = new DataPages(testingString);
+                                dataPages.add(dataPage);
+                                //adapter.notifyDataSetChanged();
+                                count = count + 1;
+                            }
+                        }
+                            /*
+                            for(String testingString:listOfURLs){
+                                testingString=listOfURLs.get(count);
+                                Log.i("info DataAct postId",post_id);
+                                Log.i("info new Urls",testingString);
+                                DataPages dataPage = new DataPages(testingString);
+                                dataPages.add(dataPage);
+                                //adapter.notifyDataSetChanged();
+                                count= count+1;
+                            }*/
+                        adapter.notifyDataSetChanged();
+                    }
+                });
+    }
+
+    private void loadTheRewardedAdd(){
+        Log.i("info"," i will try to load the addd");
+        AdRequest adRequest = new AdRequest.Builder().build();
+
+        RewardedAd.load(this,/*add key*/,
+                adRequest, new RewardedAdLoadCallback() {
+                    @Override
+                    public void onAdFailedToLoad(@NonNull LoadAdError loadAdError) {
+                        // Handle the error.
+                        Log.d(TAG, loadAdError.getMessage());
+                        mRewardedAd = null;
+                    }
+
+                    @Override
+                    public void onAdLoaded(@NonNull RewardedAd rewardedAd) {
+                        mRewardedAd = rewardedAd;
+                        Log.d(TAG, "Ad was loaded.");
+                    }
+                });
+
+    }
+    //this is for the rewarded add
+    private void showTheAdd(){
+        if (mRewardedAd != null) {
+            Activity activityContext = DisplayDataActivity.this;
+            mRewardedAd.show(activityContext, new OnUserEarnedRewardListener() {
+                @Override
+                public void onUserEarnedReward(@NonNull RewardItem rewardItem) {
+                    // Handle the reward.
+                    Log.d(TAG, "The user earned the reward.and i have granted him full access");
+                    //int rewardAmount = rewardItem.getAmount();
+                   // String rewardType = rewardItem.getType();
+                   // updateAvailableUnlocksBecauseUserHasViewedAdd();
+                    useOneUnlockToOpen.setVisibility(View.GONE);
+                    watchAddToGetAccessBtn.setVisibility(View.GONE);
+                    loadFullData();
+                    activityDisplayDataFab.setVisibility(View.GONE);
+
+                }
+            });
+        } else {
+            Log.d(TAG, "The rewarded ad wasn't ready yet.");
+            Toast.makeText(DisplayDataActivity.this,"the add isnt ready yet try using unlocks instead",Toast.LENGTH_LONG).show();
+           // showInterstitial();//this will show an interstitial add if the main rewarded is not ready yet
+           loadTheRewardedAdd();
+        }
+    }
+/*
+// this is for the interstitial that loads if the rewareded add is not ready
+    public void loadAd() {
+        AdManagerAdRequest adRequest = new AdManagerAdRequest.Builder().build();
+        AdManagerInterstitialAd.load(
+                this,
+                AD_UNIT_ID,
+                adRequest,
+                new AdManagerInterstitialAdLoadCallback() {
+                    @Override
+                    public void onAdLoaded(@NonNull AdManagerInterstitialAd interstitialAd) {
+                        // The mInterstitialAd reference will be null until
+                        // an ad is loaded.
+                        DisplayDataActivity.this.interstitialAd = interstitialAd;
+                        Log.i(TAG, "onAdLoaded");
+                        Toast.makeText(DisplayDataActivity.this, "onAdLoaded()", Toast.LENGTH_SHORT).show();
+                        interstitialAd.setFullScreenContentCallback(
+                                new FullScreenContentCallback() {
+                                    @Override
+                                    public void onAdDismissedFullScreenContent() {
+                                        // Called when fullscreen content is dismissed.
+                                        Log.d("TAG", "The ad was dismissed.");
+                                        // Make sure to set your reference to null so you don't
+                                        // show it a second time.
+                                        DisplayDataActivity.this.interstitialAd = null;
+                                    }
+
+                                    @Override
+                                    public void onAdFailedToShowFullScreenContent(AdError adError) {
+                                        // Called when fullscreen content failed to show.
+                                        Log.d("TAG", "The ad failed to show.");
+                                        // Make sure to set your reference to null so you don't
+                                        // show it a second time.
+                                        DisplayDataActivity.this.interstitialAd = null;
+                                    }
+
+                                    @Override
+                                    public void onAdShowedFullScreenContent() {
+                                        // Called when fullscreen content is shown.
+                                        Log.d("TAG", "The ad was shown.");
+                                    }
+                                });
+                    }
+
+                    @Override
+                    public void onAdFailedToLoad(@NonNull LoadAdError loadAdError) {
+                        // Handle the error
+                        Log.i(TAG, loadAdError.getMessage());
+                        interstitialAd = null;
+                        adIsLoading = false;
+                        String error =
+                                String.format(
+                                        "domain: %s, code: %d, message: %s",
+                                        loadAdError.getDomain(), loadAdError.getCode(), loadAdError.getMessage());
+                        Toast.makeText(
+                                DisplayDataActivity.this, "onAdFailedToLoad() with error: " + error, Toast.LENGTH_SHORT)
+                                .show();
+                    }
+                });
+    }
+    private void showInterstitial() {
+        // Show the ad if it's ready. Otherwise toast and restart the game.
+        if (interstitialAd != null) {
+            interstitialAd.show(this);
+            updateAvailableUnlocksBecauseUserHasViewedAdd();
+        } else {
+            Toast.makeText(this, "Ad did not load", Toast.LENGTH_SHORT).show();
+            // startGame();
+            Log.i("info adds ","Ad did not load");
+        }
+    }
+
+ */
+
+    // this is just my method to increase the available unlocks field after the user views an add
+    private void updateAvailableUnlocksBecauseUserHasViewedAdd(){
+        firestore.collection("Users").document(firebaseAuth.getCurrentUser().getUid())
+                .update("unlocksAvailable", FieldValue.increment(1))
+                .addOnCompleteListener(new OnCompleteListener<Void>() {
+                    @Override
+                    public void onComplete(@NonNull Task<Void> task) {
+                        if (task.isSuccessful()) {
+                            Log.i("info", "available unlocks reduced by 1");
+                            Toast.makeText(DisplayDataActivity.this, "available unlocks increased by by 1", Toast.LENGTH_SHORT).show();
+                            // loadFullData();
+                            // dataHasNowBeenUnlockedTv.setVisibility(View.VISIBLE);
+                        } else {
+                            Log.i("info", "was unable to decrement the feildvalue of available Unlocks ");
+                            Toast.makeText(DisplayDataActivity.this,"i was unable to increase available unlocks ",Toast.LENGTH_LONG).show();
+                        }
+                    }
+                });
+
+    }
+    private void updateUnlocksUserBought(){
+        firestore.collection("Users").document(firebaseAuth.getCurrentUser().getUid())
+                .update("unlocksAvailable", FieldValue.increment(12))
+                .addOnCompleteListener(new OnCompleteListener<Void>() {
+                    @Override
+                    public void onComplete(@NonNull Task<Void> task) {
+                        if (task.isSuccessful()) {
+                            Log.i("info", "available unlocks increases by 12");
+                            Toast.makeText(DisplayDataActivity.this, "available unlocks increased by by 12", Toast.LENGTH_SHORT).show();
+                            // loadFullData();
+                            // dataHasNowBeenUnlockedTv.setVisibility(View.VISIBLE);
+                        } else {
+                            Log.i("info", "was unable to decrement the feildvalue of available Unlocks ");
+                            Toast.makeText(DisplayDataActivity.this,"i was unable to increase available unlocks but cash was deducted ",Toast.LENGTH_LONG).show();
+                        }
+                    }
+                });
+
+    }
+
+    public void revUiManager(){
+        double amount=1;
+        String currency = "ZMW";
+
+    SimpleDateFormat sdf = new SimpleDateFormat("yyyyMMddHHmmss");
+    String currentDateandTime = sdf.format(new Date());
+    String currentTime = new SimpleDateFormat("HHmmss", Locale.getDefault()).format(new Date());
+    Log.i("info currentTime",currentTime);
+    Log.i("info dateAndT",currentDateandTime);
+    Random r = new Random();
+    int low = 1;
+    int high = 1000;
+    int result = r.nextInt(high-low) + low;
+
+    String randomAddedNumber;
+    randomAddedNumber=String.valueOf(result);
+    String generatedtansactionId=currentDateandTime+randomAddedNumber;
+
+
+    new RaveUiManager(DisplayDataActivity.this)
+            .setAmount(amount)
+            .setCurrency(currency)
+           // .initialize();
+
+            .setEmail(paymentEmail)
+            .setfName(customerUserId)
+            .setlName("customer")
+            .setNarration("mobile_money_zambia")
+            .setPublicKey(/*add key*/)
+            .setEncryptionKey(/*add key*/)
+            .setTxRef(/*add key*/)
+            .acceptZmMobileMoneyPayments(true)
+            .shouldDisplayFee(true)
+            .onStagingEnv(false)
+            .initialize();
+
+//0973454826
+    //0761851502
+
+    /*
+            .setPhoneNumber(phoneNumber,boolean)
+                    .acceptAccountPayments(boolean)
+                    .acceptCardPayments(boolean)
+                    .acceptMpesaPayments(boolean)
+                    .acceptAchPayments(boolean)
+                    .acceptGHMobileMoneyPayments(boolean)
+                    .acceptUgMobileMoneyPayments(boolean)
+                    .acceptZmMobileMoneyPayments(boolean)
+                    .acceptRwfMobileMoneyPayments(boolean)
+                    .acceptSaBankPayments(boolean)
+                    .acceptUkPayments(boolean)
+                    .acceptBankTransferPayments(boolean)
+                    .acceptUssdPayments(boolean)
+                    .acceptBarterPayments(boolean)
+                    .acceptFrancMobileMoneyPayments(boolean)
+                    .allowSaveCardFeature(boolean)
+
+                    .setMeta(List<Meta>)
+            .withTheme(styleId)
+            .isPreAuth(boolean)
+                    .setSubAccounts(List<SubAccount>)
+            .shouldDisplayFee(boolean)
+                    .showStagingLabel(boolean)
+
+                    .initialize();
+
+     */
+}
+
+    @Override
+    protected void onActivityResult(int requestCode, int resultCode, Intent data) {
+        /*
+         *  We advise you to do a further verification of transaction's details on your server to be
+         *  sure everything checks out before providing service or goods.
+         */
+        if (requestCode == RaveConstants.RAVE_REQUEST_CODE && data != null) {
+            String message = data.getStringExtra("response");
+            if (resultCode == RavePayActivity.RESULT_SUCCESS) {
+                Toast.makeText(this, "SUCCESS " + message, Toast.LENGTH_SHORT).show();
+                Log.i("info","the transaction was a success guy, check your balance");
+                updateUnlocksUserBought();
+
+
+            }
+            else if (resultCode == RavePayActivity.RESULT_ERROR) {
+                Toast.makeText(this, "ERROR " + message, Toast.LENGTH_SHORT).show();
+            }
+            else if (resultCode == RavePayActivity.RESULT_CANCELLED) {
+                Toast.makeText(this, "CANCELLED " + message, Toast.LENGTH_SHORT).show();
+            }
+        }
+        else {
+            super.onActivityResult(requestCode, resultCode, data);
+        }
+    }
+
+
+}
